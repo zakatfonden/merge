@@ -3,6 +3,7 @@ import os
 import io
 from docx import Document
 from docx.oxml import OxmlElement # More robust way to copy content
+from natsort import natsorted, ns # <-- Import natsorted and ns for algorithms
 
 # --- Configuration ---
 OUTPUT_FILENAME = 'merged_document.docx'
@@ -11,30 +12,36 @@ OUTPUT_FILENAME = 'merged_document.docx'
 def merge_word_documents_from_streams(uploaded_files):
     """
     Merges content from uploaded Word files (passed as Streamlit UploadedFile objects)
-    into a single Document object returned as a BytesIO stream.
+    into a single Document object returned as a BytesIO stream, using natural sort order.
 
     Args:
         uploaded_files (list): A list of Streamlit UploadedFile objects.
 
     Returns:
         io.BytesIO or None: A BytesIO stream containing the merged Word document,
-                             or None if no files were processed or an error occurred.
+                            or None if no files were processed or an error occurred.
         int: Count of files successfully processed.
         list: List of filenames that failed to process.
     """
     if not uploaded_files:
         return None, 0, []
 
-    # Sort files by name for consistent merging order
-    # Access the 'name' attribute of the UploadedFile object
-    uploaded_files.sort(key=lambda x: x.name)
+    # --- CORRECTED SORTING ---
+    # Sort files by name using natural sort order (handles numbers correctly)
+    # Also use ns.IGNORECASE for case-insensitive sorting (e.g., File1.docx, file2.docx)
+    # natsorted returns a new list, so assign it back
+    uploaded_files = natsorted(uploaded_files, key=lambda x: x.name, alg=ns.IGNORECASE)
+    # --- END CORRECTED SORTING ---
 
     merged_document = Document()
     files_processed_count = 0
     failed_files = []
     first_file = True # To avoid leading page break
 
-    st.write(f"Attempting to merge {len(uploaded_files)} files...")
+    st.write(f"Attempting to merge {len(uploaded_files)} files in the following order:")
+    # Display the sorted order for verification
+    st.caption(f"Order: {', '.join([f.name for f in uploaded_files])}")
+
     progress_bar = st.progress(0)
     status_text = st.empty()
 
@@ -47,10 +54,10 @@ def merge_word_documents_from_streams(uploaded_files):
         if not first_file:
             # Ensure we don't add a break if the previous file failed
             if filename not in failed_files:
-               try:
-                   merged_document.add_page_break()
-               except Exception as page_break_err:
-                   st.warning(f"Could not add page break before {filename}: {page_break_err}")
+                try:
+                    merged_document.add_page_break()
+                except Exception as page_break_err:
+                    st.warning(f"Could not add page break before {filename}: {page_break_err}")
 
         else:
             first_file = False
@@ -103,7 +110,7 @@ def merge_word_documents_from_streams(uploaded_files):
 # --- Streamlit App UI ---
 st.set_page_config(layout="wide")
 st.title("📄 Word Document Merger")
-st.markdown("Upload multiple `.docx` files below. They will be merged in alphabetical order by filename.")
+st.markdown("Upload multiple `.docx` files below. They will be merged using **natural sort order** (e.g., `file2.docx` before `file10.docx`) based on filename.")
 
 uploaded_files = st.file_uploader(
     "Choose Word files (.docx)",
@@ -145,7 +152,7 @@ if uploaded_files:
             st.error("Merging process failed or produced no output.")
 
         if failures:
-             st.warning(f"Could not process the following files: {', '.join(failures)}")
+            st.warning(f"Could not process the following files: {', '.join(failures)}")
 
 
 # Show download button only if merging was successful and attempted
@@ -159,7 +166,7 @@ if st.session_state.merge_attempted and st.session_state.merged_doc_stream:
     )
     st.caption(f"Filename: `{OUTPUT_FILENAME}`")
 elif st.session_state.merge_attempted and not st.session_state.merged_doc_stream:
-     st.error("Merging failed. Cannot provide download link.")
+    st.error("Merging failed. Cannot provide download link.")
 
 st.markdown("---")
-st.info("Note: Formatting from the original documents is preserved as much as possible, but complex layouts might vary slightly. Files are merged in alphabetical order.")
+st.info("Note: Formatting from the original documents is preserved as much as possible, but complex layouts might vary slightly. Files are merged in natural sort order based on filename.")
